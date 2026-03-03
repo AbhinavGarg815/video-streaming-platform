@@ -50,6 +50,70 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);
+
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+CREATE TABLE IF NOT EXISTS videos (
+	id UUID NOT NULL DEFAULT uuid_generate_v4(),
+	user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	title VARCHAR(255) NOT NULL,
+	description TEXT,
+	duration INTERVAL NOT NULL,
+	thumbnail_url VARCHAR(512),
+	original_s3_key VARCHAR(512) NOT NULL,
+	status VARCHAR(30) NOT NULL DEFAULT 'uploading',
+	view_count BIGINT DEFAULT 0,
+	upload_date TIMESTAMPTZ DEFAULT NOW(),
+	created_at TIMESTAMPTZ DEFAULT NOW(),
+	updated_at TIMESTAMPTZ DEFAULT NOW(),
+	CONSTRAINT videos_pkey PRIMARY KEY (id, upload_date),
+	CONSTRAINT valid_status CHECK (status IN (
+		'uploading', 'uploaded', 'transcoding', 'ready', 'failed'
+	))
+) PARTITION BY RANGE (upload_date);
+
+CREATE TABLE IF NOT EXISTS videos_default PARTITION OF videos DEFAULT;
+
+CREATE INDEX IF NOT EXISTS idx_videos_user_id ON videos(user_id);
+CREATE INDEX IF NOT EXISTS idx_videos_upload_date ON videos(upload_date);
+DROP INDEX IF EXISTS idx_videos_status;
+CREATE INDEX IF NOT EXISTS idx_videos_status ON videos(status) WHERE status = 'ready';
+
+CREATE OR REPLACE FUNCTION update_timestamp()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+	NEW.updated_at = NOW();
+	RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS update_videos_timestamp ON videos_default;
+CREATE TRIGGER update_videos_timestamp
+	BEFORE UPDATE ON videos_default
+	FOR EACH ROW EXECUTE FUNCTION update_timestamp();
+
+CREATE TABLE IF NOT EXISTS video_qualities (
+	id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+	video_id UUID NOT NULL,
+	video_upload_date TIMESTAMPTZ NOT NULL,
+	quality_label VARCHAR(50) NOT NULL,
+	manifest_url VARCHAR(512) NOT NULL,
+	manifest_type VARCHAR(20) NOT NULL DEFAULT 'hls',
+	bitrate_kbps INTEGER,
+	width INTEGER,
+	height INTEGER,
+	approx_size_mb BIGINT,
+	created_at TIMESTAMPTZ DEFAULT NOW(),
+	UNIQUE (video_id, quality_label),
+	CONSTRAINT fk_video_qualities_video
+		FOREIGN KEY (video_id, video_upload_date)
+		REFERENCES videos(id, upload_date)
+		ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_video_qualities_video_id ON video_qualities(video_id);
 `
 
 	if _, err := r.pool.Exec(ctx, query); err != nil {

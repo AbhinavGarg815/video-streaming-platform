@@ -11,6 +11,7 @@ import (
 	"github.com/AbhinavGarg815/video-streaming-platform/internal/auth"
 	"github.com/AbhinavGarg815/video-streaming-platform/internal/config"
 	"github.com/AbhinavGarg815/video-streaming-platform/internal/database"
+	"github.com/AbhinavGarg815/video-streaming-platform/internal/video"
 )
 
 func main() {
@@ -43,8 +44,16 @@ func main() {
 	authService := auth.NewService(authRepo, env.JWTSecret, env.AccessTTL, env.RefreshTTL)
 	authHandler := auth.NewHandler(authService)
 
+	videoRepo := video.NewRepository(pool)
+	videoService, err := video.NewService(ctx, videoRepo, env.AWSRegion, env.AWSAccessKeyID, env.AWSSecretAccessKey, env.OriginalVideoBucket)
+	if err != nil {
+		log.Fatalf("initialize video service: %v", err)
+	}
+	videoHandler := video.NewHandler(videoService)
+
 	r := gin.Default()
 	authHandler.RegisterRoutes(r)
+	videoHandler.RegisterRoutes(r, auth.RequireAuth(authService))
 
 	r.GET("/health", func(c *gin.Context) {
 		queryCtx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)

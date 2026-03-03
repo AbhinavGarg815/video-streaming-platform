@@ -11,11 +11,15 @@ import (
 )
 
 type Env struct {
-	Port        string
-	DatabaseURL string
-	JWTSecret   string
-	AccessTTL   time.Duration
-	RefreshTTL  time.Duration
+	Port                string
+	DatabaseURL         string
+	JWTSecret           string
+	AccessTTL           time.Duration
+	RefreshTTL          time.Duration
+	AWSRegion           string
+	AWSAccessKeyID      string
+	AWSSecretAccessKey  string
+	OriginalVideoBucket string
 }
 
 func Load() (Env, error) {
@@ -71,11 +75,35 @@ func Load() (Env, error) {
 		refreshTTL = parsed
 	}
 
+	awsRegion := os.Getenv("AWS_REGION")
+	if awsRegion == "" {
+		return Env{}, fmt.Errorf("AWS_REGION is required (set it in .env)")
+	}
+
+	awsAccessKeyID := os.Getenv("AWS_ACCESS_KEY_ID")
+	if awsAccessKeyID == "" {
+		return Env{}, fmt.Errorf("AWS_ACCESS_KEY_ID is required (set it in .env)")
+	}
+
+	awsSecretAccessKey := os.Getenv("AWS_SECRET_ACCESS_KEY")
+	if awsSecretAccessKey == "" {
+		return Env{}, fmt.Errorf("AWS_SECRET_ACCESS_KEY is required (set it in .env)")
+	}
+
+	originalVideoBucket := os.Getenv("ORIGINAL_VIDEO_BUCKET")
+	if originalVideoBucket == "" {
+		originalVideoBucket = "video-app-originals"
+	}
+
 	return Env{
-		Port:        port,
-		DatabaseURL: databaseURL,
-		JWTSecret:   jwtSecret,
-		AccessTTL:   accessTTL,
-		RefreshTTL:  refreshTTL,
+		Port:                port,
+		DatabaseURL:         databaseURL,
+		JWTSecret:           jwtSecret,
+		AccessTTL:           accessTTL,
+		RefreshTTL:          refreshTTL,
+		AWSRegion:           awsRegion,
+		AWSAccessKeyID:      awsAccessKeyID,
+		AWSSecretAccessKey:  awsSecretAccessKey,
+		OriginalVideoBucket: originalVideoBucket,
 	}, nil
 }

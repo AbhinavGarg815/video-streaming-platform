@@ -30,3 +30,6 @@ coverage.out
 # OS files
 .DS_Store
 Thumbs.db
+
+
+*.csv

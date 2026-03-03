@@ -126,6 +126,32 @@ func (s *Service) Refresh(ctx context.Context, refreshToken string) (User, Token
 	return user, tokens, nil
 }
 
+func (s *Service) ValidateAccessToken(accessToken string) (int64, error) {
+	claims := &jwt.RegisteredClaims{}
+
+	parsed, err := jwt.ParseWithClaims(accessToken, claims, func(token *jwt.Token) (any, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, ErrInvalidToken
+		}
+
+		return s.jwtSecret, nil
+	})
+	if err != nil || !parsed.Valid {
+		return 0, ErrInvalidToken
+	}
+
+	if claims.Subject == "" {
+		return 0, ErrInvalidToken
+	}
+
+	userID, err := strconv.ParseInt(claims.Subject, 10, 64)
+	if err != nil || userID <= 0 {
+		return 0, ErrInvalidToken
+	}
+
+	return userID, nil
+}
+
 func (s *Service) issueTokens(ctx context.Context, user User) (TokenPair, error) {
 	now := time.Now().UTC()
 	accessExpiresAt := now.Add(s.accessTokenTTL)
