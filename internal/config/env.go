@@ -20,6 +20,7 @@ type Env struct {
 	AWSAccessKeyID      string
 	AWSSecretAccessKey  string
 	OriginalVideoBucket string
+	CompletionQueueURL  string
 }
 
 func Load() (Env, error) {
@@ -95,6 +96,8 @@ func Load() (Env, error) {
 		originalVideoBucket = "video-app-originals"
 	}
 
+	completionQueueURL := os.Getenv("COMPLETION_QUEUE_URL")
+
 	return Env{
 		Port:                port,
 		DatabaseURL:         databaseURL,
@@ -105,5 +108,6 @@ func Load() (Env, error) {
 		AWSAccessKeyID:      awsAccessKeyID,
 		AWSSecretAccessKey:  awsSecretAccessKey,
 		OriginalVideoBucket: originalVideoBucket,
+		CompletionQueueURL:  completionQueueURL,
 	}, nil
 }

@@ -1,0 +1,11 @@
+.git
+.gitignore
+.vscode
+bin
+dist
+tmp
+*.log
+*.out
+*.mp4
+*.webm
+
