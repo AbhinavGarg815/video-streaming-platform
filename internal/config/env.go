@@ -21,6 +21,7 @@ type Env struct {
 	AWSSecretAccessKey  string
 	OriginalVideoBucket string
 	CompletionQueueURL  string
+	CDNBaseURL          string
 }
 
 func Load() (Env, error) {
@@ -97,6 +98,7 @@ func Load() (Env, error) {
 	}
 
 	completionQueueURL := os.Getenv("COMPLETION_QUEUE_URL")
+	cdnBaseURL := os.Getenv("CDN_BASE_URL")
 
 	return Env{
 		Port:                port,
@@ -109,5 +111,6 @@ func Load() (Env, error) {
 		AWSSecretAccessKey:  awsSecretAccessKey,
 		OriginalVideoBucket: originalVideoBucket,
 		CompletionQueueURL:  completionQueueURL,
+		CDNBaseURL:          cdnBaseURL,
 	}, nil
 }

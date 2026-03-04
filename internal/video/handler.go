@@ -55,9 +55,9 @@ func (h *Handler) RegisterRoutes(r *gin.Engine, authMiddleware gin.HandlerFunc) 
 	videos.Use(authMiddleware)
 	videos.POST("/presign", h.PresignUpload)
 
-	r.GET("/watch/:video_id", h.Watch)
+	r.GET("/watch/:video_id/meta", h.Watch)
 	r.GET("/watch/:video_id/stream/*asset_path", h.StreamWatchAsset)
-	r.GET("/watch/:video_id/player", h.WatchPlayer)
+	r.GET("/watch/:video_id", h.WatchPlayer)
 }
 
 func (h *Handler) PresignUpload(c *gin.Context) {
@@ -263,7 +263,7 @@ func (h *Handler) WatchPlayer(c *gin.Context) {
 
 		async function init() {
 			try {
-				const res = await fetch('/watch/' + encodeURIComponent(videoID));
+				const res = await fetch('/watch/' + encodeURIComponent(videoID) + '/meta');
 				const body = await res.json();
 				if (!res.ok) {
 					setError(body.error || 'Failed to load watch metadata');

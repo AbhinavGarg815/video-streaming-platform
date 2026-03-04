@@ -22,8 +22,8 @@ import (
 
 type Service struct {
 	repo          *Repository
-	awsRegion     string
 	bucket        string
+	cdnBaseURL    string
 	s3Client      *s3.Client
 	presignClient *s3.PresignClient
 }
@@ -40,7 +40,7 @@ type PresignedUpload struct {
 	ExpiresAt time.Time
 }
 
-func NewService(ctx context.Context, repo *Repository, region, accessKeyID, secretAccessKey, bucket string) (*Service, error) {
+func NewService(ctx context.Context, repo *Repository, region, accessKeyID, secretAccessKey, bucket, cdnBaseURL string) (*Service, error) {
 	awsConfig, err := config.LoadDefaultConfig(
 		ctx,
 		config.WithRegion(region),
@@ -54,8 +54,8 @@ func NewService(ctx context.Context, repo *Repository, region, accessKeyID, secr
 
 	return &Service{
 		repo:          repo,
-		awsRegion:     region,
 		bucket:        bucket,
+		cdnBaseURL:    normalizeCDNBaseURL(cdnBaseURL),
 		s3Client:      client,
 		presignClient: s3.NewPresignClient(client),
 	}, nil
@@ -167,10 +167,10 @@ func (s *Service) GetWatchPlayback(ctx context.Context, videoID string) (WatchPl
 	for _, variant := range parsedVariants {
 		variants = append(variants, WatchVariant{
 			Quality:     variant.quality,
-			PlaylistURL: streamURL(video.VideoID, variant.relativeKey),
+			PlaylistURL: s.playbackURL(video.VideoID, basePrefix, variant.relativeKey),
 		})
 	}
-	masterURL := streamURL(video.VideoID, "master.m3u8")
+	masterURL := s.playbackURL(video.VideoID, basePrefix, "master.m3u8")
 
 	if len(variants) == 0 {
 		return WatchPlayback{}, ErrPlaybackNotFound
@@ -315,4 +315,25 @@ func s3HTTPURL(bucket, key, region string) string {
 
 func streamURL(videoID, assetPath string) string {
 	return fmt.Sprintf("/watch/%s/stream/%s", videoID, strings.TrimPrefix(assetPath, "/"))
+}
+
+func (s *Service) playbackURL(videoID, basePrefix, assetPath string) string {
+	cleanAsset := strings.TrimPrefix(assetPath, "/")
+	if s.cdnBaseURL != "" && basePrefix != "" {
+		return s.cdnBaseURL + "/" + strings.TrimPrefix(path.Join(basePrefix, cleanAsset), "/")
+	}
+
+	return streamURL(videoID, cleanAsset)
+}
+
+func normalizeCDNBaseURL(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if !strings.HasPrefix(value, "http://") && !strings.HasPrefix(value, "https://") {
+		value = "https://" + value
+	}
+
+	return strings.TrimRight(value, "/")
 }

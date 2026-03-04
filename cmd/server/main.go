@@ -45,7 +45,7 @@ func main() {
 	authHandler := auth.NewHandler(authService)
 
 	videoRepo := video.NewRepository(pool)
-	videoService, err := video.NewService(ctx, videoRepo, env.AWSRegion, env.AWSAccessKeyID, env.AWSSecretAccessKey, env.OriginalVideoBucket)
+	videoService, err := video.NewService(ctx, videoRepo, env.AWSRegion, env.AWSAccessKeyID, env.AWSSecretAccessKey, env.OriginalVideoBucket, env.CDNBaseURL)
 	if err != nil {
 		log.Fatalf("initialize video service: %v", err)
 	}
