@@ -58,6 +58,9 @@ func (r *Repository) ApplyCompletion(ctx context.Context, message Message) error
 
 	for _, output := range message.Outputs {
 		label := buildQualityLabel(output)
+		if label == "master" {
+			continue
+		}
 		manifestURL := fmt.Sprintf("s3://%s/%s", output.Bucket, output.Key)
 
 		_, err := tx.Exec(
@@ -87,7 +90,7 @@ func (r *Repository) ApplyCompletion(ctx context.Context, message Message) error
 			resolvedUploadDate,
 			label,
 			manifestURL,
-			strings.ToLower(strings.TrimSpace(output.Format)),
+			"hls",
 			bytesToApproxMB(output.SizeBytes),
 		)
 		if err != nil {
@@ -180,18 +183,14 @@ func bytesToApproxMB(sizeBytes int64) int64 {
 
 func buildQualityLabel(output OutputFile) string {
 	resolution := strings.TrimSpace(output.Resolution)
-	format := strings.TrimSpace(output.Format)
-	if resolution == "" && format == "" {
+	if resolution == "" {
 		return "unknown"
 	}
-	if resolution == "" {
-		return format
-	}
-	if format == "" {
-		return resolution
+	if strings.EqualFold(resolution, "master") {
+		return "master"
 	}
 
-	return resolution + "-" + format
+	return strings.ToLower(resolution)
 }
 
 func parseProcessedAt(value string) time.Time {

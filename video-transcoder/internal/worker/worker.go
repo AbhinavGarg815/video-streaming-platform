@@ -233,12 +233,7 @@ func (w *Worker) processJob(ctx context.Context, j job.TranscodeJob) ([]job.Outp
 
 	resolutions := j.Resolutions
 	if len(resolutions) == 0 {
-		resolutions = []string{"360p", "720p", "1080p"}
-	}
-
-	formats := j.Formats
-	if len(formats) == 0 {
-		formats = []string{"mp4", "webm"}
+		resolutions = []string{"360p", "480p", "720p", "1080p"}
 	}
 
 	outputPrefix := strings.TrimSpace(j.OutputPrefix)
@@ -246,21 +241,25 @@ func (w *Worker) processJob(ctx context.Context, j job.TranscodeJob) ([]job.Outp
 		outputPrefix = fmt.Sprintf("videos/%s", jobID)
 	}
 
-	files, err := w.transcoder.Transcode(inputPath, jobDir, resolutions, formats)
+	files, err := w.transcoder.Transcode(inputPath, jobDir, resolutions)
 	if err != nil {
 		return nil, err
 	}
 
 	outputs := make([]job.OutputFile, 0, len(files))
 	for _, file := range files {
-		s3Key := strings.TrimPrefix(filepath.ToSlash(filepath.Join(outputPrefix, filepath.Base(file.Path))), "/")
+		s3Key := strings.TrimPrefix(filepath.ToSlash(filepath.Join(outputPrefix, file.KeySuffix)), "/")
 		if err := w.storage.Upload(ctx, w.env.TranscodedBucket, s3Key, file.Path, file.ContentType); err != nil {
 			return nil, fmt.Errorf("upload file %s: %w", file.Path, err)
 		}
 
+		if !file.IsManifest {
+			continue
+		}
+
 		outputs = append(outputs, job.OutputFile{
 			Resolution: file.Resolution,
-			Format:     file.Format,
+			Format:     "hls",
 			Bucket:     w.env.TranscodedBucket,
 			Key:        s3Key,
 			SizeBytes:  file.SizeBytes,

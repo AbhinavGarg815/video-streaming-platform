@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -16,80 +17,194 @@ type OutputFile struct {
 	Resolution  string
 	Format      string
 	Path        string
+	KeySuffix   string
 	ContentType string
 	SizeBytes   int64
+	IsManifest  bool
 }
 
 func New(binary string) *Transcoder {
 	return &Transcoder{binary: binary}
 }
 
-func (t *Transcoder) Transcode(inputPath, outputDir string, resolutions, formats []string) ([]OutputFile, error) {
-	out := make([]OutputFile, 0, len(resolutions)*len(formats))
+func (t *Transcoder) Transcode(inputPath, outputDir string, resolutions []string) ([]OutputFile, error) {
+	out := make([]OutputFile, 0, 32)
+	variantEntries := make([]variantInfo, 0, len(resolutions))
 
 	for _, resolution := range resolutions {
-		scale, ok := resolutionScale(resolution)
+		resolution = strings.ToLower(strings.TrimSpace(resolution))
+		spec, ok := resolutionSpec(resolution)
 		if !ok {
 			return nil, fmt.Errorf("unsupported resolution: %s", resolution)
 		}
 
-		for _, format := range formats {
-			format = strings.ToLower(strings.TrimSpace(format))
-			outputPath := filepath.Join(outputDir, fmt.Sprintf("%s.%s", resolution, format))
+		variantDir := filepath.Join(outputDir, resolution)
+		if err := os.MkdirAll(variantDir, 0o755); err != nil {
+			return nil, fmt.Errorf("create variant dir: %w", err)
+		}
 
-			args, contentType, err := commandArgs(inputPath, outputPath, scale, format)
-			if err != nil {
-				return nil, err
-			}
+		playlistPath := filepath.Join(variantDir, "index.m3u8")
+		segmentPattern := filepath.Join(variantDir, "segment_%03d.ts")
 
-			cmd := exec.Command(t.binary, args...)
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				return nil, fmt.Errorf("ffmpeg failed (%s/%s): %w - %s", resolution, format, err, string(output))
-			}
+		args := []string{
+			"-y",
+			"-i", inputPath,
+			"-vf", fmt.Sprintf("scale=%s", spec.Scale),
+			"-c:v", "libx264",
+			"-preset", "fast",
+			"-profile:v", "main",
+			"-crf", "21",
+			"-g", "48",
+			"-keyint_min", "48",
+			"-sc_threshold", "0",
+			"-b:v", spec.Bitrate,
+			"-maxrate", spec.MaxRate,
+			"-bufsize", spec.BufSize,
+			"-c:a", "aac",
+			"-b:a", "128k",
+			"-ar", "48000",
+			"-ac", "2",
+			"-hls_time", "4",
+			"-hls_playlist_type", "vod",
+			"-hls_segment_type", "mpegts",
+			"-hls_segment_filename", segmentPattern,
+			playlistPath,
+		}
 
-			info, err := os.Stat(outputPath)
+		cmd := exec.Command(t.binary, args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return nil, fmt.Errorf("ffmpeg failed (%s/hls): %w - %s", resolution, err, string(output))
+		}
+
+		playlistInfo, err := os.Stat(playlistPath)
+		if err != nil {
+			return nil, fmt.Errorf("stat variant playlist: %w", err)
+		}
+
+		out = append(out, OutputFile{
+			Resolution:  resolution,
+			Format:      "hls",
+			Path:        playlistPath,
+			KeySuffix:   filepath.ToSlash(filepath.Join(resolution, "index.m3u8")),
+			ContentType: "application/vnd.apple.mpegurl",
+			SizeBytes:   playlistInfo.Size(),
+			IsManifest:  true,
+		})
+
+		segmentFiles, err := filepath.Glob(filepath.Join(variantDir, "segment_*.ts"))
+		if err != nil {
+			return nil, fmt.Errorf("list segment files: %w", err)
+		}
+		sort.Strings(segmentFiles)
+
+		for _, segmentFile := range segmentFiles {
+			segmentInfo, err := os.Stat(segmentFile)
 			if err != nil {
-				return nil, fmt.Errorf("stat transcoded file: %w", err)
+				return nil, fmt.Errorf("stat segment file: %w", err)
 			}
 
 			out = append(out, OutputFile{
 				Resolution:  resolution,
-				Format:      format,
-				Path:        outputPath,
-				ContentType: contentType,
-				SizeBytes:   info.Size(),
+				Format:      "hls-segment",
+				Path:        segmentFile,
+				KeySuffix:   filepath.ToSlash(filepath.Join(resolution, filepath.Base(segmentFile))),
+				ContentType: "video/mp2t",
+				SizeBytes:   segmentInfo.Size(),
+				IsManifest:  false,
 			})
 		}
+
+		variantEntries = append(variantEntries, variantInfo{
+			Resolution: resolution,
+			Bandwidth:  spec.Bandwidth,
+			Dimensions: spec.Dimensions,
+		})
 	}
+
+	masterContent := buildMasterPlaylist(variantEntries)
+	masterPath := filepath.Join(outputDir, "master.m3u8")
+	if err := os.WriteFile(masterPath, []byte(masterContent), 0o644); err != nil {
+		return nil, fmt.Errorf("write master playlist: %w", err)
+	}
+
+	masterInfo, err := os.Stat(masterPath)
+	if err != nil {
+		return nil, fmt.Errorf("stat master playlist: %w", err)
+	}
+
+	out = append(out, OutputFile{
+		Resolution:  "master",
+		Format:      "hls",
+		Path:        masterPath,
+		KeySuffix:   "master.m3u8",
+		ContentType: "application/vnd.apple.mpegurl",
+		SizeBytes:   masterInfo.Size(),
+		IsManifest:  true,
+	})
 
 	return out, nil
 }
 
-func resolutionScale(resolution string) (string, bool) {
-	switch strings.ToLower(strings.TrimSpace(resolution)) {
+type variantInfo struct {
+	Resolution string
+	Bandwidth  string
+	Dimensions string
+}
+
+type resolutionConfig struct {
+	Scale      string
+	Bitrate    string
+	MaxRate    string
+	BufSize    string
+	Bandwidth  string
+	Dimensions string
+}
+
+func resolutionSpec(resolution string) (resolutionConfig, bool) {
+	switch resolution {
 	case "360p":
-		return "640:360", true
+		return resolutionConfig{Scale: "640:360", Bitrate: "900k", MaxRate: "960k", BufSize: "1800k", Bandwidth: "960000", Dimensions: "640x360"}, true
 	case "480p":
-		return "854:480", true
+		return resolutionConfig{Scale: "854:480", Bitrate: "1400k", MaxRate: "1498k", BufSize: "2800k", Bandwidth: "1498000", Dimensions: "854x480"}, true
 	case "720p":
-		return "1280:720", true
+		return resolutionConfig{Scale: "1280:720", Bitrate: "2800k", MaxRate: "2996k", BufSize: "5600k", Bandwidth: "2996000", Dimensions: "1280x720"}, true
 	case "1080p":
-		return "1920:1080", true
+		return resolutionConfig{Scale: "1920:1080", Bitrate: "5000k", MaxRate: "5350k", BufSize: "10000k", Bandwidth: "5350000", Dimensions: "1920x1080"}, true
 	default:
-		return "", false
+		return resolutionConfig{}, false
 	}
 }
 
-func commandArgs(inputPath, outputPath, scale, format string) ([]string, string, error) {
-	common := []string{"-y", "-i", inputPath, "-vf", fmt.Sprintf("scale=%s", scale), "-c:a", "aac"}
+func buildMasterPlaylist(variants []variantInfo) string {
+	ordered := make([]variantInfo, len(variants))
+	copy(ordered, variants)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		return resolutionOrder(ordered[i].Resolution) < resolutionOrder(ordered[j].Resolution)
+	})
 
-	switch format {
-	case "mp4":
-		return append(common, "-c:v", "libx264", "-preset", "fast", "-movflags", "+faststart", outputPath), "video/mp4", nil
-	case "webm":
-		return append(common, "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", "32", outputPath), "video/webm", nil
+	lines := []string{"#EXTM3U", "#EXT-X-VERSION:3"}
+	for _, variant := range ordered {
+		lines = append(lines,
+			fmt.Sprintf("#EXT-X-STREAM-INF:BANDWIDTH=%s,RESOLUTION=%s,CODECS=\"avc1.4d401f,mp4a.40.2\"", variant.Bandwidth, variant.Dimensions),
+			fmt.Sprintf("%s/index.m3u8", variant.Resolution),
+		)
+	}
+
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func resolutionOrder(resolution string) int {
+	switch resolution {
+	case "360p":
+		return 1
+	case "480p":
+		return 2
+	case "720p":
+		return 3
+	case "1080p":
+		return 4
 	default:
-		return nil, "", fmt.Errorf("unsupported format: %s", format)
+		return 99
 	}
 }
