@@ -49,10 +49,11 @@ func (t *Transcoder) Transcode(inputPath, outputDir string, resolutions []string
 		args := []string{
 			"-y",
 			"-i", inputPath,
-			"-vf", fmt.Sprintf("scale=%s", spec.Scale),
+			"-vf", fmt.Sprintf("scale=%s,format=yuv420p", spec.Scale),
 			"-c:v", "libx264",
 			"-preset", "fast",
 			"-profile:v", "main",
+			"-pix_fmt", "yuv420p",
 			"-crf", "21",
 			"-g", "48",
 			"-keyint_min", "48",
