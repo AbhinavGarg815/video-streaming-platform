@@ -1,0 +1,12 @@
+.git
+.gitignore
+.vscode
+.idea
+*.exe
+*.out
+*.log
+bin/
+dist/
+tmp/
+video-transcoder/.env
+.env
