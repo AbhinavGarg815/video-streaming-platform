@@ -69,8 +69,6 @@ services:
   caddy:
     image: caddy:2.9-alpine
     restart: unless-stopped
-    environment:
-      APP_DOMAIN: ${APP_DOMAIN}
     ports:
       - "80:80"
       - "443:443"

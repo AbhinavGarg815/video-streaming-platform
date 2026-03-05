@@ -1,4 +1,4 @@
-{$APP_DOMAIN} {
+:80 {
   encode gzip zstd
 
   @health path /health
