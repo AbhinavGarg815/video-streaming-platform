@@ -8,11 +8,13 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /transcoder ./cmd/transcode
 
-FROM alpine:3.20
+FROM debian:bookworm-slim
 
-RUN apk add --no-cache ffmpeg ca-certificates
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends ffmpeg ca-certificates tzdata \
+	&& rm -rf /var/lib/apt/lists/*
 
-RUN addgroup -S app && adduser -S -G app app
+RUN groupadd --system app && useradd --system --gid app app
 
 WORKDIR /app
 COPY --from=builder /transcoder /usr/local/bin/transcoder
