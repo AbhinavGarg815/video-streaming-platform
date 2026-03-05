@@ -10,3 +10,4 @@ dist/
 tmp/
 video-transcoder/.env
 .env
+deploy/aws/.env.aws

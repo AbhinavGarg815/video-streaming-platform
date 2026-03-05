@@ -1,0 +1,92 @@
+name: video-platform
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    image: video-platform/backend:latest
+    environment:
+      PORT: 8080
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      ACCESS_TOKEN_TTL: ${ACCESS_TOKEN_TTL:-1h}
+      REFRESH_TOKEN_TTL: ${REFRESH_TOKEN_TTL:-168h}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      ORIGINAL_VIDEO_BUCKET: ${ORIGINAL_VIDEO_BUCKET}
+      COMPLETION_QUEUE_URL: ${COMPLETION_QUEUE_URL}
+      CDN_BASE_URL: ${CDN_BASE_URL}
+    restart: unless-stopped
+    networks:
+      - app
+    expose:
+      - "8080"
+
+  completion-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.completion-worker
+    image: video-platform/completion-worker:latest
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      COMPLETION_QUEUE_URL: ${COMPLETION_QUEUE_URL}
+    restart: unless-stopped
+    networks:
+      - app
+    depends_on:
+      - backend
+
+  video-transcoder:
+    build:
+      context: ./video-transcoder
+      dockerfile: Dockerfile
+    image: video-platform/video-transcoder:latest
+    environment:
+      AWS_REGION: ${AWS_REGION}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      TRANSCODE_QUEUE_URL: ${TRANSCODE_QUEUE_URL}
+      COMPLETION_QUEUE_URL: ${COMPLETION_QUEUE_URL}
+      ORIGINAL_VIDEO_BUCKET: ${ORIGINAL_VIDEO_BUCKET}
+      TRANSCODED_BUCKET: ${TRANSCODED_BUCKET}
+      FFMPEG_BINARY: ${FFMPEG_BINARY:-ffmpeg}
+      WORK_DIR: ${WORK_DIR:-/tmp/transcoder}
+      SQS_WAIT_TIME_SECONDS: ${SQS_WAIT_TIME_SECONDS:-20}
+      SQS_MAX_MESSAGES: ${SQS_MAX_MESSAGES:-1}
+      SQS_VISIBILITY_TIMEOUT_SECONDS: ${SQS_VISIBILITY_TIMEOUT_SECONDS:-900}
+      POLL_INTERVAL: ${POLL_INTERVAL:-2s}
+    restart: unless-stopped
+    networks:
+      - app
+    tmpfs:
+      - /tmp/transcoder:size=4g
+
+  caddy:
+    image: caddy:2.9-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - app
+    depends_on:
+      - backend
+
+networks:
+  app:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

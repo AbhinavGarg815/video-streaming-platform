@@ -14,7 +14,11 @@ FROM alpine:3.20
 
 RUN apk add --no-cache ca-certificates tzdata
 
+RUN addgroup -S app && adduser -S -G app app
+
 WORKDIR /app
 COPY --from=builder /out/completion-worker /usr/local/bin/completion-worker
+
+USER app
 
 ENTRYPOINT ["/usr/local/bin/completion-worker"]
