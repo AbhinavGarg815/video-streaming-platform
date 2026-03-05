@@ -27,6 +27,9 @@ IAM user policy must allow:
 - `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility`, `sqs:GetQueueAttributes` on worker queues
 - `sqs:SendMessage` to completion queue
 
+Note:
+The completion worker currently uses the shared app config loader, so `JWT_SECRET` must also be set for it.
+
 ## 3. Provision EC2
 
 Recommended instance:
